@@ -27,6 +27,11 @@ export const env = {
   OPENAI_API_KEY: process.env.OPENAI_API_KEY || "",
   OPENAI_MODEL: process.env.OPENAI_MODEL || "gpt-4o",
 
+  // Google Gemini (free alternative - no card needed)
+  AI_PROVIDER: process.env.AI_PROVIDER || "openai",
+  GEMINI_API_KEY: process.env.GEMINI_API_KEY || "",
+  GEMINI_MODEL: process.env.GEMINI_MODEL || "gemini-2.0-flash",
+
   // Python Voice Service
   VOICE_SERVICE_URL: process.env.VOICE_SERVICE_URL || "http://localhost:8001",
 
@@ -41,3 +46,42 @@ export const env = {
   // Session
   SESSION_TTL: parseInt(process.env.SESSION_TTL || "86400"), // 24 hours
 };
+
+// ─── Startup Validation ─────────────────────────────────────
+const warnings: string[] = [];
+const provider = env.AI_PROVIDER || "openai";
+
+if (provider === "openai") {
+  if (!env.OPENAI_API_KEY) {
+    warnings.push(
+      "OPENAI_API_KEY is not set! AI Chat and voice analysis insights will NOT work.\n" +
+      "  → Get your key from: https://platform.openai.com/api-keys\n" +
+      "  → Set OPENAI_API_KEY=sk-... in your .env file"
+    );
+  } else if (!env.OPENAI_API_KEY.startsWith("sk-")) {
+    warnings.push(
+      `OPENAI_API_KEY looks invalid (doesn't start with "sk-"). Current value starts with: "${env.OPENAI_API_KEY.slice(0, 8)}..."\n` +
+      "  → Make sure you copied the full key from https://platform.openai.com/api-keys"
+    );
+  } else {
+    console.log(`✓ AI configured — provider: OpenAI, model: ${env.OPENAI_MODEL}, key: ${env.OPENAI_API_KEY.slice(0, 8)}...${env.OPENAI_API_KEY.slice(-4)}`);
+  }
+} else {
+  if (!env.GEMINI_API_KEY) {
+    warnings.push(
+      "GEMINI_API_KEY is not set! AI Chat will NOT work.\n" +
+      "  → Get a FREE key from: https://aistudio.google.com/app/apikey\n" +
+      "  → Set GEMINI_API_KEY=AIzaSy... in your .env file"
+    );
+  } else {
+    console.log(`✓ AI configured — provider: Gemini, model: ${env.GEMINI_MODEL}, key: ${env.GEMINI_API_KEY.slice(0, 8)}...`);
+  }
+}
+
+if (warnings.length > 0) {
+  console.warn("\n╔══════════════════════════════════════════════════════════╗");
+  console.warn("║  ⚠️  VoiceMind Environment Warnings                      ║");
+  console.warn("╚══════════════════════════════════════════════════════════╝");
+  warnings.forEach((w) => console.warn(`\n⚠️  ${w}`));
+  console.warn("");
+}

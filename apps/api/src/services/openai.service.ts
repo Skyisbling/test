@@ -86,7 +86,6 @@ Provide your clinical analysis in JSON format.`;
         ],
         temperature: 0.3, // Low temp for consistent clinical output
         max_tokens: 1000,
-        response_format: { type: "json_object" },
       });
 
       const content = response.choices[0]?.message?.content;
@@ -96,11 +95,14 @@ Provide your clinical analysis in JSON format.`;
 
       return JSON.parse(content) as AnalysisInsights;
     } catch (error: any) {
-      logger.error("OpenAI analysis error:", error.message);
+      const status = error?.status || error?.response?.status;
+      const errorType = error?.type || error?.code || "unknown";
+      const errorMsg = error?.message || "Unknown error";
+      logger.error(`OpenAI analysis error [${status || "no-status"}] (${errorType}): ${errorMsg}`);
       // Return default response on failure
       return {
         sentimentScore: 5,
-        summary: "Analysis could not be completed. Please try again.",
+        summary: `Analysis failed: ${status === 401 ? "Invalid API key" : status === 429 ? "Rate limited" : status === 404 ? `Model "${OPENAI_MODEL}" not available` : "Please try again"}.`,
         clinicalObservations: ["Unable to generate observations at this time."],
         riskIndicators: [],
         recommendations: ["Please retry the analysis or consult manually."],
@@ -148,6 +150,21 @@ ${input.emotionalContext ? `The user's latest voice analysis detected: ${input.e
     ];
 
     try {
+      // Check if API key is configured before making the call
+      const apiKey = process.env.AI_PROVIDER === "openai" ? process.env.OPENAI_API_KEY : process.env.GEMINI_API_KEY;
+      if (!apiKey) {
+        const provider = process.env.AI_PROVIDER || "gemini";
+        logger.error(`AI chat error: ${provider === "gemini" ? "GEMINI_API_KEY" : "OPENAI_API_KEY"} is not set`);
+        return {
+          reply: provider === "gemini"
+            ? "AI service not configured. Set GEMINI_API_KEY (free from https://aistudio.google.com/app/apikey)"
+            : "AI service not configured. Set OPENAI_API_KEY in environment.",
+          tokensUsed: 0,
+        };
+      }
+
+      logger.info(`OpenAI chat request — model: ${OPENAI_MODEL}, history: ${input.conversationHistory.length} msgs`);
+
       const response = await openai.chat.completions.create({
         model: OPENAI_MODEL,
         messages,
@@ -158,9 +175,36 @@ ${input.emotionalContext ? `The user's latest voice analysis detected: ${input.e
       const reply = response.choices[0]?.message?.content || "I'm sorry, I couldn't generate a response.";
       const tokensUsed = response.usage?.total_tokens || 0;
 
+      logger.info(`OpenAI chat success — tokens used: ${tokensUsed}`);
       return { reply, tokensUsed };
     } catch (error: any) {
-      logger.error("OpenAI chat error:", error.message);
+      // Detailed error logging for debugging
+      const status = error?.status || error?.response?.status;
+      const errorType = error?.type || error?.code || "unknown";
+      const errorMsg = error?.message || "Unknown error";
+
+      logger.error(`OpenAI chat error [${status || "no-status"}] (${errorType}): ${errorMsg}`);
+
+      // Provide specific user-facing messages based on error type
+      if (status === 401) {
+        return {
+          reply: "AI service authentication failed. The API key may be invalid or expired. Please check the OPENAI_API_KEY.",
+          tokensUsed: 0,
+        };
+      }
+      if (status === 429) {
+        return {
+          reply: "AI service is rate-limited or has exceeded its quota. Please try again later or check your OpenAI billing.",
+          tokensUsed: 0,
+        };
+      }
+      if (status === 404 || errorMsg.includes("model")) {
+        return {
+          reply: `AI model "${OPENAI_MODEL}" is not available on your API key. Try setting OPENAI_MODEL=gpt-3.5-turbo in your .env file.`,
+          tokensUsed: 0,
+        };
+      }
+
       return {
         reply: "I'm experiencing a temporary issue. Please try again in a moment.",
         tokensUsed: 0,
